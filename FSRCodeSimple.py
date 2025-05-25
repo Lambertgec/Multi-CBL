@@ -10,7 +10,7 @@ from collections import deque
 
 board = pyfirmata.Arduino('COM4')
 pyfirmata.util.Iterator(board).start()
-pinsUsed  = 8 # can change this back to 2 until we wire more sensors, just use the first x pins on the board
+pinsUsed  = 8 # can change this back to 2 until we wire more sensors, just use the first x pins on the board, max should be 8
 
 inputs = [ [] for _ in range(pinsUsed) ]  # list of lists for 8 analog array inputs
 for pin in range(pinsUsed):
@@ -23,8 +23,8 @@ plt.subplots_adjust(bottom=0.25)
 
 window_size = 100
 datas = [deque([0]*window_size, maxlen=window_size) for _ in range(pinsUsed)] # deque to store the last 'window_size' values for each sensor
-lines = [ax.plot(datas[i], label=f'A{i}')[0] for i in range(pinsUsed)] # an array of lines for each sensor
 colors = ['b', 'r', 'g', 'c', 'm', 'y', 'k', 'orange'] # an array of colors for ease of assignment
+lines = []
 for i in range(pinsUsed):
     lines[i], = ax.plot(datas[i], label=f'A{i}', color = colors[i]) # set the data and color for each line
 ax.set_ylim(0, 1)
@@ -50,7 +50,7 @@ try:
     while not should_stop['stop']:
 
         # Read the values from sensors, depending on what they are update its data, then the lines
-        values = [0.0] * 8
+        values = [0.0] * pinsUsed
         for i in range(pinsUsed):
             values[i] = inputs[i].read()
             if values[i] is not None:
