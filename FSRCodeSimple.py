@@ -10,7 +10,7 @@ from collections import deque
 
 board = pyfirmata.Arduino('COM4')
 pyfirmata.util.Iterator(board).start()
-pinsUsed  = 8 # can change this back to 2 until we wire more sensors, just use the first x pins on the board, max should be 8
+pinsUsed  = 4 # can change this back to 2 until we wire more sensors, just use the first x pins on the board, max should be 8
 
 inputs = [ [] for _ in range(pinsUsed) ]  # list of lists for 8 analog array inputs
 for pin in range(pinsUsed):
