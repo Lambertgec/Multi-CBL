@@ -53,11 +53,13 @@ float mad(float arr[], int size, float med) { //returns the Median Absolute Devi
 void setup() {
   Serial.begin(115200); //this has to be the same as in platformio.ini OR in the serial monitor
   pinMode(LED_PIN, OUTPUT); // Set the LED pin as output
-  for (int i = 0; i < pinsUsed; i++)
+  for (int i = 0; i < pinsUsed; i++) {
     pinMode(analogPins[i], INPUT); // Optional for clarity
     pinMode(buzzerPins[i], OUTPUT); // Set buzzer pins as output
-    for (int j = 0; j < window_size; j++)
-      datas[i][j] = 0.0; //initialize rolling windows to 0.0
+    for (int j = 0; j < window_size; j++) {
+        datas[i][j] = 0.0; //initialize rolling windows to 0.0
+      }
+    }  
   last_unstable_time = millis(); //initialize last unstable time
 }
 
