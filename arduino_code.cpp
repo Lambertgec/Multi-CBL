@@ -63,6 +63,35 @@ void setup() {
   last_unstable_time = millis(); //initialize last unstable time
 }
 
+void debounce(bool all_consistent) {
+  // Debounce logic - after any of the sensors were inconsistent, the next debounce_length readings must be consistent for all sensors (currently)
+  for (int i = 0; i < debounce_length - 1; i++)
+    debounce_buffer[i] = debounce_buffer[i + 1];
+  debounce_buffer[debounce_length - 1] = all_consistent; // shift the buffer and add the current consistency status
+
+  bool debounced = true;
+  for (int i = 0; i < debounce_length; i++)
+    if (!debounce_buffer[i]) { // if any of the readings in any of the sensor buffers were false (inconsistent (large change)) 
+      debounced = false;  //then debouncing did not happen yet (as we wait for buffers to only have true (stable)) values
+      break;
+    }
+
+  if (debounced) { // if all sensors were consistent for the last debounce_length readings
+    if (millis() - last_unstable_time > stability_seconds) { //if enough time elapsed and we didnt yet report posture as stable, this is where we light up the LED and make the buzzers pulse
+        digitalWrite(LED_PIN, HIGH); // Turn on the LED, if it works this should be changed to a method
+        digitalWrite(buzzerPins[0], HIGH); // Turn on the first buzzer, if it works this should be changed to a method
+        Serial.print("Stable posture detected for "); //kept in case snprintf doesnt work
+        Serial.print(stability_seconds / 1000);
+        Serial.println(" seconds!");
+        stable_reported = true; // we probably don't need this
+    }
+  } else { // there was atleast one sensor having inconsistent readings hence we reset the timer
+    last_unstable_time = millis();
+    stable_reported = false;
+    Serial.println("Timer reset");
+  }
+}
+
 void loop() {
   // Read sensors and update their rolling windows
   for (int i = 0; i < pinsUsed; i++) {
@@ -102,49 +131,16 @@ void loop() {
 
       if (consistency_score < consistency_threshold) { //check if readings were consistent enough
         all_consistent = false;
-        char buf[64];
-        snprintf(buf, sizeof(buf), "Sensor %d inconsistent: %.2f < %.2f", i, consistency_score, consistency_threshold);
-        Serial.println(buf);
-        // Serial.print("Sensor ");
-        // Serial.print(i);
-        // Serial.print(" inconsistent: ");
-        // Serial.print(consistency_score, 2);
-        // Serial.print(" < ");
-        // Serial.println(consistency_threshold, 2);
+        Serial.print("Sensor ");
+        Serial.print(i);
+        Serial.print(" inconsistent: ");
+        Serial.print(consistency_score, 2);
+        Serial.print(" < ");
+        Serial.println(consistency_threshold, 2);
         // break; // we probably don't want to break here, because we want to check all sensors 
       }
     }
+    debounce(all_consistent); // Call debounce function to handle consistency checks
   }
-
-  // Debounce logic - after any of the sensors were inconsistent, the next debounce_length readings must be consistent for all sensors (currently)
-  for (int i = 0; i < debounce_length - 1; i++)
-    debounce_buffer[i] = debounce_buffer[i + 1];
-  debounce_buffer[debounce_length - 1] = all_consistent; // shift the buffer and add the current consistency status
-
-  bool debounced = true;
-  for (int i = 0; i < debounce_length; i++)
-    if (!debounce_buffer[i]) { // if any of the readings in any of the sensor buffers were false (inconsistent (large change)) 
-      debounced = false;  //then debouncing did not happen yet (as we wait for buffers to only have true (stable)) values
-      break;
-    }
-
-  if (debounced) { // if all sensors were consistent for the last debounce_length readings
-    if (millis() - last_unstable_time > stability_seconds) { //if enough time elapsed and we didnt yet report posture as stable, this is where we light up the LED and make the buzzers pulse
-        char buf[64];
-        snprintf(buf, sizeof(buf), "Stable posture detected for %.2f seconds! \n", stability_seconds / 1000.0);
-        Serial.println(buf);
-        digitalWrite(LED_PIN, HIGH); // Turn on the LED, if it works this should be changed to a method
-        digitalWrite(buzzerPins[0], HIGH); // Turn on the first buzzer, if it works this should be changed to a method
-        // Serial.print("Stable posture detected for "); //kept in case snprintf doesnt work
-        // Serial.print(stability_seconds / 1000);
-        // Serial.println(" seconds!");
-        stable_reported = true; // we probably don't need this
-    }
-  } else { // there was atleast one sensor having inconsistent readings hence we reset the timer
-    last_unstable_time = millis();
-    stable_reported = false;
-    Serial.println("Timer reset");
-  }
-
   delay(delay_time);
 }
