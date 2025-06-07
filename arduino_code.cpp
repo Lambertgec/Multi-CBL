@@ -145,6 +145,7 @@ void light_values(int red, int green, int blue) {
   Serial.println(blue);
 }
 
+bool last_debounced = false; // to keep track of the last debounced state, so we only update reference median when the posture becomes stable for the first time
 void debounce(bool all_consistent) {
   if (!at_chair()) { // if no person is at the chair, we can immediately report that
     Serial.println("No person at the chair");
@@ -175,6 +176,15 @@ void debounce(bool all_consistent) {
   }
 
   if (debounced) {
+    if (!last_debounced) { // Only update when transitioning to stable
+        for (int i = 0; i < pinsUsed; i++) {
+            float window[window_size];
+            for (int j = 0; j < window_size; j++)
+                window[j] = datas[i][(data_idx[i] + j) % window_size];
+            reference_median[i] = median(window);
+        }
+    }
+    last_debounced = true;
     if (millis() - last_unstable_time > stability_seconds) {
         // ORANGE if there was a timeout with sensors 0-3 not all being 0
         Serial.println("Posture timeout");
@@ -184,17 +194,10 @@ void debounce(bool all_consistent) {
       Serial.println("Posture can still be kept and is stable");
       light_nudge("green"); // Set LED to green 
     }
-
-    // Update reference median when posture becomes stable
-    for (int i = 0; i < pinsUsed; i++) {
-      float window[window_size];
-      for (int j = 0; j < window_size; j++)
-          window[j] = datas[i][(data_idx[i] + j) % window_size];
-      reference_median[i] = median(window);
-    }
   } else {
     // GREEN when not stable and also "acceptable" posture (meaning lowerback 2 sensors and seat 2 rear sensors are not all 0)
     Serial.println("Posture not stable, but acceptable");
+    last_debounced = false; // reset debounced state
     last_unstable_time = millis(); // update last unstable time
     light_nudge("green"); // make led green
   }
@@ -256,5 +259,5 @@ void loop() {
     light_values(150, 150, 150); // Set LED to white if no person is at the chair
     Serial.println("No person at the chair");
   }
-  // delay(delay_time); // may operate too fast without this, we'll see if we need it or not
+  delay(delay_time); // may operate too fast without this, we'll see if we need it or not
 }
