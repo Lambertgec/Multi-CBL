@@ -220,7 +220,7 @@ void loop() {
     }
   }
 
-  if (enough_data) {
+  if (enough_data && at_chair()) {
     bool all_consistent = true;
     for (int i = 0; i < pinsUsed; i++) { // Build window for each sensor
       float window[window_size];
@@ -252,6 +252,9 @@ void loop() {
       }
     }
     debounce(all_consistent); // Call debounce function to handle consistency checks
+  } else if (enough_data && !at_chair()) {
+    light_values(150, 150, 150); // Set LED to white if no person is at the chair
+    Serial.println("No person at the chair");
   }
-  delay(delay_time);
+  // delay(delay_time); // may operate too fast without this, we'll see if we need it or not
 }
