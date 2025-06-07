@@ -16,7 +16,10 @@ const int debounce_length = 3; //amount of consecutive readings that must be con
 const float mad_multiplier = 3.0; //multiplier for filtering noise
 const unsigned long stability_seconds = 5 * 1000; // amount of time in seconds that the posture must be stable for
 const int delay_time = 100; //delay between readings in milliseconds, adjust as needed
-const int pulse_duration = 200; // duration of the pulse for the light nudge in milliseconds
+const int pulse_duration = 100; // duration of the pulse for the light nudge in milliseconds
+const float at_chair_threshold = 0.05; // threshold for determining if a person is at the chair, so value when sitting down
+float reference_median[pinsUsed] = {0}; // 
+const float drift_threshold = 0.15; // the value the median of readings can drift from the reference (which is the median of when the posture was stable)
 
 // Global variables
 float datas[pinsUsed][window_size]; //rolling window for each sensor
@@ -24,16 +27,19 @@ int data_idx[pinsUsed] = {0}; //current index for each sensor's rolling window
 bool buffer_full[pinsUsed] = {false}; //whether there are rolling window data for each sensor
 bool debounce_buffer[debounce_length] = {true, true, true}; //buffer for consistency checks (noise filtering)
 unsigned long last_unstable_time = 0; // last time the posture was unstable
-bool reported = false; // whether a stable posture has been reported, for now no functionality
 const int timestamp = 10 * 1000; // timestamps for the light nudge function
-String last_color = ""; // last color set for the light nudge function
-unsigned long color_set_time = 0; // time when the color was last set
+bool reported = false; // whether a stable posture has been reported, for now no functionality
 
+unsigned long color_set_time = 0; // time when the color was last set
+String last_color = ""; // last color set for the light nudge function
+bool led_pulsing = false;
+unsigned long pulse_start_time = 0; // time when the pulse started
 void light_nudge(String color) {
   if (color != last_color) {
     // Color changed, update immediately and reset timer
     last_color = color;
     color_set_time = millis();
+    led_pulsing = false; // reset pulsing state
     if (color == "red")        light_values(200, 0, 0);
     else if (color == "green") light_values(0, 200, 0);
     else if (color == "orange")light_values(200, 100, 0);
@@ -43,30 +49,24 @@ void light_nudge(String color) {
 
   // Color is the same as before
   if (millis() - color_set_time >= timestamp) {
-    // Pulse the LED
-    if (color == "red") {
-      light_values(200, 0, 0);
-      delay(pulse_duration);
-      light_values(0, 0, 0);
-      delay(pulse_duration);
-      light_values(200, 0, 0);
-    } else if (color == "green") {
-      light_values(0, 200, 0);
-    } else if (color == "orange") {
-      light_values(200, 100, 0);
-      delay(pulse_duration);
-      light_values(0, 0, 0);
-      delay(pulse_duration);
-      light_values(200, 100, 0);
-    } else {
-      Serial.println("Invalid color");
+    if (!led_pulsing) {
+      light_values(0, 0, 0); // Turn off LED
+      pulse_start_time = millis();
+      led_pulsing = true;
+    } else if (led_pulsing && (millis() - pulse_start_time >= pulse_duration)) {
+      if (color == "red")        light_values(200, 0, 0);
+      else if (color == "green") light_values(0, 200, 0);
+      else if (color == "orange")light_values(200, 100, 0);
+      else                       Serial.println("Invalid color");
+      led_pulsing = false; // Ready for next pulse cycle
     }
-  } else { // we might not need this
+  } else { // we might not need this but it doesnt hurt to keep it
     // Keep the LED on with the current color
     if (color == "red")        light_values(200, 0, 0);
     else if (color == "green") light_values(0, 200, 0);
     else if (color == "orange")light_values(200, 100, 0);
     else                       Serial.println("Invalid color");
+    led_pulsing = false; // indicate that the LED is pulsing
   }
 }
 
@@ -111,19 +111,25 @@ void setup() {
   last_unstable_time = millis(); //initialize last unstable time
 }
 
-bool incorrect_posture() {
-  bool all_zero = true;
-  for (int i = 0; i < 4; i++) {
+// this might have to be changed once its actually in the seating, because padding might cause unintentional small readings
+bool at_chair() {
+  // Check if any of the sensors have a positive reading 
+  if (datas[0][data_idx[0]] > at_chair_threshold || datas[1][data_idx[1]] > at_chair_threshold || // we have to make these the bottom 4 sensors
+      datas[2][data_idx[2]] > at_chair_threshold || datas[3][data_idx[3]] > at_chair_threshold) {
+    return true; // at least one sensor has a reading above the threshold, meaning a person is at the chair
+  } 
+  return false; // all sensors had a reading of 0, meaning no person is at the chair
+}
+
+bool incorrect_posture() { // we should check all the relevant sensors, not just first 4
+  for (int i = 0; i < 4; i++) { 
     float med = median(datas[i]);
     float mad_val = mad(datas[i], med);
     if (med > 0.01 || mad_val > 0.01) { // adjust threshold as needed
-        all_zero = false;
-        break;
+        return false;
     }
   }
-  if (all_zero) {
-    return true;
-  } 
+  return true;
 }
 
 // Change light values 
@@ -140,6 +146,13 @@ void light_values(int red, int green, int blue) {
 }
 
 void debounce(bool all_consistent) {
+  if (!at_chair()) { // if no person is at the chair, we can immediately report that
+    Serial.println("No person at the chair");
+    light_values(150, 150, 150); // set it to white, just for debugging 
+    last_unstable_time = millis(); 
+    return;
+  }
+
   if (incorrect_posture()) { // we can immediately report all postures that we deem incorrect in incorrect_posture()
     // RED if sensors 0-3 are all mostly 0
     Serial.println("Poor posture detected, should be changed");
@@ -154,11 +167,12 @@ void debounce(bool all_consistent) {
   debounce_buffer[debounce_length - 1] = all_consistent;
 
   bool debounced = true;
-  for (int i = 0; i < debounce_length; i++)
+  for (int i = 0; i < debounce_length; i++) {
     if (!debounce_buffer[i]) { // if any of the readings in any of the sensor buffers were false (inconsistent (large change)) 
       debounced = false;  //then debouncing did not happen yet (as we wait for buffers to only have true (stable)) values
       break;
     }
+  }
 
   if (debounced) {
     if (millis() - last_unstable_time > stability_seconds) {
@@ -167,13 +181,21 @@ void debounce(bool all_consistent) {
         light_nudge("orange"); // Set LED to orange
     } else {
       // GREEN if there was no timeout and acceptable posture
-      Serial.println("Posture can still be kept");
+      Serial.println("Posture can still be kept and is stable");
       light_nudge("green"); // Set LED to green 
+    }
+
+    // Update reference median when posture becomes stable
+    for (int i = 0; i < pinsUsed; i++) {
+      float window[window_size];
+      for (int j = 0; j < window_size; j++)
+          window[j] = datas[i][(data_idx[i] + j) % window_size];
+      reference_median[i] = median(window);
     }
   } else {
     // GREEN when not stable and also "acceptable" posture (meaning lowerback 2 sensors and seat 2 rear sensors are not all 0)
     Serial.println("Posture not stable, but acceptable");
-    lsast_unstable_time = millis(); // update last unstable time
+    last_unstable_time = millis(); // update last unstable time
     light_nudge("green"); // make led green
   }
 }
@@ -198,8 +220,8 @@ void loop() {
     }
   }
 
-  bool all_consistent = true;
   if (enough_data) {
+    bool all_consistent = true;
     for (int i = 0; i < pinsUsed; i++) { // Build window for each sensor
       float window[window_size];
       for (int j = 0; j < window_size; j++) // where each window's values are the last window_size readings of the sensor
@@ -215,7 +237,8 @@ void loop() {
           within_range++;
       float consistency_score = (float)within_range / window_size;
 
-      if (consistency_score < consistency_threshold) { //check if readings were consistent enough
+      // Check for drift from reference
+      if (consistency_score < consistency_threshold || fabs(med - reference_median[i]) > drift_threshold) {
         all_consistent = false;
         light_values(0, 0, 200); // Set LED to blue for inconsistency
         last_color = "blue";
