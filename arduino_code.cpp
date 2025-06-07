@@ -8,6 +8,7 @@ const int analogPins[pinsUsed] = {A0, A1, A2, A3, A4, A5, A6, A7}; //analog pins
 const int LED_PIN[3] = {9, 10, 11}; //pin for the LED, as its RGB it will also probably have 3 pins?
 const int buzzerPins[pinsUsed] = {2, 3, 4, 5}; //pins for the buzzers (one for each sensor)
 const int serial_baud_rate = 9600; // Serial communication baud rate
+const int exit_button_pin = 13; // change this to wherever it is
 
 // Variables we have to play around with
 const int window_size = 20; //size of the rolling window for each sensor
@@ -98,6 +99,7 @@ float mad(float arr[], float med) { //returns the Median Absolute Deviation (MAD
 
 void setup() {
   Serial.begin(serial_baud_rate); //this has to be the same as in platformio.ini OR in the serial monitor
+  pinMode(exit_button_pin, INPUT_PULLUP); // Use internal pull-up resistor for exit button
   for (int i = 0; i < 3; i++) {
     pinMode(LED_PIN[i], OUTPUT); // Set the LED pin as output
   }
@@ -203,7 +205,16 @@ void debounce(bool all_consistent) {
   }
 }
 
+bool running = true; // boolean to have the board "turn off". It cant be properly turned off, but we can make it seem like it is
 void loop() {
+  if (digitalRead(exit_button_pin) == LOW) { // Check if exit button is pressed
+    running = false; // Stop the loop
+    light_values(0, 0, 0); // Turn off the LED
+    Serial.println("Exiting...");
+    return; // Exit the loop
+  }
+  if (!running) return; // If running is false, exit the loop
+
   // Read sensors and update their rolling windows
   for (int i = 0; i < pinsUsed; i++) {
     datas[i][data_idx[i]] = analogRead(analogPins[i]) / 1023.0; // readings are analogous (0-1023), we convert it to a 0.0-1.0
